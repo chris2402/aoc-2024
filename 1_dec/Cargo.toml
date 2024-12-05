@@ -1,0 +1,10 @@
+[package]
+name = "aoc"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+parameterized = "2.0.0"
+
+[dependencies.load_input]
+path = '../load_input'
