@@ -1,8 +1,38 @@
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, Read};
 
 type Level = i32;
+type LevelStep = i32;
 type Report = Vec<Level>;
+
+
+#[derive(Debug, Eq, PartialEq, Hash, Copy, Clone)]
+enum Direction { Inc, Dec, None }
+
+trait LevelValidity {
+    fn direction(&self) -> Direction;
+    fn bounded(&self) -> bool;
+    fn validate(&self, direction: Direction) -> bool;
+}
+
+impl LevelValidity for i32 {
+    fn direction(&self) -> Direction {
+        match self {
+            x if *x > 0 => Direction::Inc,
+            x if *x < 0 => Direction::Dec,
+            _ => Direction::None,
+        }
+    }
+
+    fn bounded(&self) -> bool {
+        self.abs() > 0 && self.abs() < 4
+    }
+
+    fn validate(&self, direction: Direction) -> bool {
+        self.bounded() && self.direction() == direction
+    }
+}
 
 fn read_file_contents(filename: &str) -> io::Result<String> {
     let mut file = File::open(filename)?;
@@ -24,22 +54,55 @@ fn get_reports() -> Result<Vec<Report>, io::Error> {
     Ok(reports)
 }
 
+fn find_general_direction(level_steps: &Vec<LevelStep>) -> Direction {
+    let mut direction_count_map: HashMap<Direction, usize> = HashMap::new();
+    for s in level_steps.iter() {
+        let direction = s.direction();
+        let count = direction_count_map.entry(direction).or_insert(0);
+        *count += 1;
+    }
+    
+    *direction_count_map.iter().max_by_key(|x| x.1).unwrap().0
+}
+
 fn validate_report(report: &Report) -> bool {
-    let differences: Vec<i32> = report.windows(2)
-        .map(|window| window[1] - window[0])
+    let maybe_invalid_step = try_find_invalid_step(report);
+
+    match maybe_invalid_step {
+        Some(invalid_step_index) => validate_with_problem_dampening(report, invalid_step_index),
+        None => true
+    }
+}
+
+fn try_find_invalid_step(report: &Vec<i32>) -> Option<usize> {
+    let level_steps: Vec<i32> = report.windows(2)
+        .map(|window| window[0] - window[1])
         .collect();
+
+    let main_direction = find_general_direction(&level_steps);
     
-    let within_threshold: Vec<bool> = differences.iter().map(|&x| x.abs() > 0 && x.abs() < 4).collect();
-    let within_threshold = within_threshold.iter().all(|x| *x);
+    let maybe_invalid_step = level_steps
+        .iter()
+        .position(|x| !x.validate(main_direction));
     
-    let all_inc: Vec<bool> = 
-        differences.iter().map(|&x| x < 0).collect();
+    maybe_invalid_step
+}
+
+fn validate_with_problem_dampening(report: &Report, index: usize) -> bool {
+    let mut dampened_report = report.clone();
+    dampened_report.remove(index);
     
-    let all_dec: Vec<bool> = 
-        differences.iter().map(|&x| x > 0).collect();
-    let all_inc_or_dec = all_inc.iter().all(|x| *x) || all_dec.iter().all(|x| *x);
-    
-    within_threshold && all_inc_or_dec
+    match try_find_invalid_step(&dampened_report) {
+        None => true,
+        Some(_) => {
+            let mut dampened_report = report.clone();
+            dampened_report.remove(index + 1);
+            match try_find_invalid_step(&dampened_report){
+                None => true,
+                Some(_) => false
+            }
+        },
+    }
 }
 
 fn main() -> io::Result<()> {
