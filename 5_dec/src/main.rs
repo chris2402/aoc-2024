@@ -1,70 +1,45 @@
-use load_input::read_file_contents;
-
-type Updates = Vec<usize>;
-type Rule = (usize, usize);
-struct Rules {
-    rules: Vec<Rule>,
+mod rules {
+    pub mod model;
+    pub mod validation;
+    pub mod parser;
 }
 
-impl Rules {
-    fn from_contents(contents: Vec<&str>) -> Self {
-        let rules = contents
-            .iter()
-            .map(|line| {
-                let c: Vec<usize> = line.split("|").map(|x| x.trim().parse().unwrap()).collect();
-                assert!(c.len() == 2);
-                    
-                (c[0], c[1])    
+mod updates {
+    pub mod model;
+}
 
-            })
-            .collect::<Vec<Rule>>();
+use load_input::read_file_contents;
+use rules::parser::RuleParser;
+use rules::model::Rule;
+use updates::model::{
+    Updates,
+    UpdateValidator,
+    RuleSolver
+};
 
-        Self { rules }
-    }
+fn parse_content(content: &str) -> Result<(Vec<Rule>, Vec<Updates>), &str> {
+    let mut content_iter = content.split("\r\n\r\n").flat_map(|s| s.split("\n\n"));
     
-    fn validate(&self, updates: &Updates) -> bool {
-        self.broken_rules(updates).len() == 0
-    }
+    let rules = match content_iter.next() {
+        Some(rule_content) => match rule_content.parse_rules(){
+            Some(rules) => rules,
+            _ => return Err("Error parsing rules")
+        },
+        _ => return Err("Error finding rule content")   
+    };
+    
+    let updates: Vec<Updates> = match content_iter.next(){
 
-    fn broken_rules(&self, updates: &Updates) -> Vec<(usize, bool, Rule)> {
-        let mut broken_rules = vec![];
+        Some(updates) => {
+            updates
+                .lines()
+                .map(|line| line.split(",").map(|x| x.parse().unwrap()).collect())
+                .collect()
+        },
+        _ => return Err("Failed to find updates")
+    };
 
-        for (i, elem) in updates.iter().enumerate() {
-            let mut iter = updates.iter();
-
-            let before: Vec<usize> = iter
-                        .by_ref().take_while(|u| u.ne(&elem)).cloned()
-                        .collect();
-            
-            let after: Vec<usize> = iter.cloned().collect();
-
-            for rule in self.rules.clone()
-            {
-                match rule {
-                    (x,y) if x == *elem => {
-                        if before.contains(&&y) {
-                            broken_rules.push((i,false,(x,y)));
-                        }
-                        else {
-                            continue;
-                        }
-                    },
-                    
-                    (x,y) if *elem == y => {
-                        if after.contains(&&x) {
-                            broken_rules.push((i, true, (x,y)));
-                        }
-                        else {
-                            continue;
-                        }
-                    },
-                    _ => continue
-                }
-            }
-        }
-        
-        broken_rules
-    }
+    Ok((rules, updates))
 }
 
 fn get_middle (updates: &Updates) -> usize {
@@ -74,17 +49,26 @@ fn get_middle (updates: &Updates) -> usize {
 
 fn main() {
     let contents = read_file_contents("input.txt").unwrap();
-    let mut lines = contents.lines();
-    let rules: Vec<&str> = lines.by_ref().take_while(|l| l.contains('|')).collect();
-    let rules = Rules::from_contents(rules);
+    let (rules, updates) = parse_content(&contents).unwrap();
 
-    let updates: Vec<Vec<usize>> = lines
-        .map(|x| 
-            x.split(",").map(|f| 
-                f.trim().parse::<usize>().unwrap()).collect::<Vec<usize>>()).collect();
+    let valid_result = task_1(&rules, &updates);
+    let soved_result = task_2(&rules, &updates);
     
-    let validated = updates.iter().map(|x| (rules.validate(&x), x));
-    
+    println!("Valid mid-sum Result: {}", valid_result.iter().map(get_middle).sum::<usize>());
+    println!("Solved mid-sum Result: {}", soved_result.iter().map(get_middle).sum::<usize>());
+}
+
+fn task_2(rules: &Vec<Rule>, updates: &Vec<Updates>) -> Vec<Vec<usize>> {
+    updates.iter().filter(|ue| !ue.validate(rules).is_valid())
+        .map(|ue| ue.solve(rules))
+        .collect()
+}
+
+fn task_1(rules: &Vec<Rule>, updates: &Vec<Vec<usize>>) -> Vec<Vec<usize>> {
+    let validated = updates.iter().map(|update_entry| {
+        let is_valid = rules.iter().all(|r| r.test_compliance(update_entry));
+        (is_valid, update_entry)
+    });
     
     let valids = validated.clone().filter(|(x,_)| *x);
     let valid_result = valids.clone()
@@ -92,11 +76,104 @@ fn main() {
         .cloned()
         .collect::<Vec<_>>();
 
-    let invalids = validated.clone().filter(|(x,_)| !x);
+    valid_result
+}
 
-    println!();
-    println!("Valid mid-sum Result: {}", valid_result.iter().map(get_middle).sum::<usize>());
-    println!();
-    println!("Invalids: {}\nValids: {}", invalids.count(), valids.count());
-    println!();
+#[cfg(test)]
+mod tests{
+    use super::*;
+
+    #[test]
+    fn content_parse() {
+        let content = 
+"1|2
+3|4
+5|6
+
+1,2,3,4,5
+5,4,3,2,1";
+
+        let (rule, updates) = parse_content(content).unwrap();
+
+        assert_eq!(rule, vec![Rule::new(1, 2), Rule::new(3, 4), Rule::new(5, 6)]);
+        assert_eq!(updates, vec![vec![1,2,3,4,5], vec![5,4,3,2,1]]);
+    }
+
+    #[test]
+    fn task1_test() {
+        let content = 
+"47|53
+97|13
+97|61
+97|47
+75|29
+61|13
+75|53
+29|13
+97|29
+53|29
+61|53
+97|53
+61|29
+47|13
+75|47
+97|75
+47|61
+75|61
+47|29
+75|13
+53|13
+
+75,47,61,53,29
+97,61,53,29,13
+75,29,13
+75,97,47,61,53
+61,13,29
+97,13,75,29,47";
+
+        let (rules, updates) = parse_content(content).unwrap();
+        let valid_result = task_1(&rules, &updates);
+
+        
+        assert_eq!(valid_result.iter().map(get_middle).sum::<usize>(), 143);
+        assert_eq!(valid_result.len(), 3);
+    }
+
+    #[test]
+    fn task2_test() {
+        let content = 
+"47|53
+97|13
+97|61
+97|47
+75|29
+61|13
+75|53
+29|13
+97|29
+53|29
+61|53
+97|53
+61|29
+47|13
+75|47
+97|75
+47|61
+75|61
+47|29
+75|13
+53|13
+
+75,97,47,61,53
+61,13,29
+97,13,75,29,47";
+
+        let (rules, updates) = parse_content(content).unwrap();
+        let valid_result = task_2(&rules, &updates);
+
+        
+        assert_eq!(valid_result.iter().map(get_middle).sum::<usize>(), 123);
+        assert_eq!(valid_result.len(), 3);
+    }
+    
 }
