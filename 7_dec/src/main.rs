@@ -1,5 +1,4 @@
 use std::collections::VecDeque;
-
 use load_input::read_file_contents;
 
 fn parse(input: &str) -> Vec<(usize, VecDeque<usize>)> {
@@ -22,7 +21,7 @@ fn main() {
     
     let equations = parse(&input);
 
-    let result = solve_1(equations);
+    let result = solve(equations);
 
     println!("Result: {}", result);
 }
@@ -35,6 +34,16 @@ fn solve_recursive(test_val: usize, stack: &mut VecDeque<usize>) -> Option<usize
     } 
     
     let second = stack.pop_front()?;
+
+    let value: usize = format!("{}{}", first.to_string(), second.to_string()).parse().unwrap();
+    if value <= test_val {
+        let mut stack2 = stack.clone();
+        stack2.push_front(value);
+        match solve_recursive(test_val, &mut stack2) {
+            Some(_) => return Some(test_val),
+            None => {}
+        }
+    }
 
     if first * second <= test_val {
         let mut stack2 = stack.clone();
@@ -57,7 +66,8 @@ fn solve_recursive(test_val: usize, stack: &mut VecDeque<usize>) -> Option<usize
     None
 }
 
-fn solve_1(input: Vec<(usize, VecDeque<usize>)>) -> usize {
+
+fn solve(input: Vec<(usize, VecDeque<usize>)>) -> usize {
     input.iter()
         .filter_map(|(test_val, stack)|{
             solve_recursive(*test_val, &mut stack.clone())
@@ -78,8 +88,7 @@ mod tests {
 161011: 16 10 13
 192: 17 8 14
 21037: 9 7 18 13
-292: 11 6 16 20
-";
+292: 11 6 16 20";
 
     #[test]
     fn parse_test() {
@@ -126,9 +135,17 @@ mod tests {
     #[test]
     fn assignment_test() {
         let equations = parse(INPUT);
-        let actual = solve_1(equations);
+        let actual = solve(equations);
 
         assert_eq!(3749, actual);
+    }
+    
+    #[test]
+    fn assignment_2_test() {
+        let equations = parse(INPUT);
+        let actual = solve(equations);
+
+        assert_eq!(11387, actual);
     }
     
 }
