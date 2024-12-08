@@ -128,24 +128,8 @@ mod tests {
     fn test_find_antinodes() {
         let map = AntennaMap::parse(INPUT).unwrap();
         
-        let no_antinodes = map.find_antinodes_all();
+        let no_antinodes = map.find_antinodes_all().len();
         
-
-        assert_eq!(no_antinodes, vec![
-            (0,6),
-            (0,11),
-            (1,3),
-            (2,4),
-            (2,10),
-            (3,2),
-            (4,9),
-            (5,1),
-            (5,6),
-            (6,3),
-            (7,0),
-            (7,7),
-            (10,10),
-            (11,10),
-        ].into_iter().collect::<HashSet<_>>());
+        assert_eq!(no_antinodes, 34);
     }
 }

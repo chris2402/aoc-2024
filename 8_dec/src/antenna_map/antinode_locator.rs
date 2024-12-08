@@ -1,15 +1,12 @@
 use itertools::Itertools;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashSet, HashMap};
 use super::{
     AntennaMap,
     AntennaType,
     Coordinates,
 };
 
-use super::point_calculations::{
-    Distance,
-    calculate_distance
-};
+use super::point_calculations::calculate_distance;
 
 pub trait AntiNodeLocator {
     fn find_antinodes(&self, antenna_type: &AntennaType) -> Vec<Coordinates>;
@@ -34,14 +31,18 @@ impl AntiNodeLocator for AntennaMap {
     fn find_antinodes(&self, antenna_type: &AntennaType) -> Vec<Coordinates> {
         self.permutate(antenna_type)
             .iter()
-            .filter_map(|(from, to)| {
+            .flat_map(|(from, to)| {
+                let mut result: Vec<(usize, usize)> = Vec::new();
+
+                result.push(to.clone());
                 let distance = calculate_distance(*from, *to);
-                let anti_to = distance.relative_to(to);
-                if self.is_within_bounds(&anti_to) {
-                    Some((anti_to.0 as usize, anti_to.1 as usize))
-                } else {
-                    None
-                }
+                let mut current = distance.relative_to(to);
+                while self.is_within_bounds(&current) {
+                    result.push((current.0 as usize, current.1 as usize));
+                    current = distance.relative_to(&(current.0 as usize, current.1 as usize));
+                } 
+
+                result.into_iter()
             })
             .collect::<Vec<_>>()
     }
