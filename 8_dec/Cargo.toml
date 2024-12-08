@@ -1,0 +1,10 @@
+[package]
+name = "aoc_8"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+itertools = "0.13.0"
+
+[dependencies.load_input]
+path = '../load_input'

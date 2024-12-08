@@ -20,7 +20,7 @@ $currentDate = Get-Date
 # Loop through days 1 to 24
 for ($day = 1; $day -le 24; $day++) {
     # Check if the current date is less than December $day, 2024
-    $targetDate = Get-Date -Year 2024 -Month 12 -Day ($day)
+    $targetDate = Get-Date -Year 2024 -Month 12 -Day $day -Second 0 -Hour 0 -Minute 0
     if ($targetDate -gt $currentDate) {
         Write-Output "Current date is less than December $day, 2024. Exiting..."
         exit
