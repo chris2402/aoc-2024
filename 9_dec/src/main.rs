@@ -4,14 +4,10 @@ use load_input::read_file_contents;
 
 fn main() {
     let input = read_file_contents("input.txt").unwrap();
-    let flat = DiskMap::parse(input.as_str()).compress().flatten();
+    let mut diskmap = DiskMap::parse(input.as_str());
+    diskmap.compress();
     
-    let chekc_sum:usize = flat.iter().enumerate().flat_map(|(i, entry)| {
-        match entry {
-            DiskMapEntry::File(f) => Some(i * f.id),
-            DiskMapEntry::Empty(_) => None,
-        }
-    }).sum();
+    let chekc_sum:usize = diskmap.get_checksum();
 
     println!("Checksum: {}", chekc_sum);
 }
@@ -20,13 +16,6 @@ fn main() {
 struct File {
     id: usize,
     size: usize,
-}
-
-impl File {
-    fn reduce_size(&mut self, size: usize) -> File {
-        self.size = self.size.saturating_sub(size);
-        File { id: self.id, size }
-    }
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
@@ -43,20 +32,6 @@ impl DiskMapEntry {
     fn new_empty(size: usize) -> Self {
         DiskMapEntry::Empty(size)
     }
-
-    fn size(&self) -> usize {
-        match self {
-            DiskMapEntry::File(f) => f.size,
-            DiskMapEntry::Empty(size) => *size,
-        }
-    }
-
-    fn is_file(&self) -> Option<DiskMapEntry> {
-        match self {
-            DiskMapEntry::File(_) => Some(self.clone()),
-            DiskMapEntry::Empty(_) => None,
-        }
-    }
     
     fn as_file_ref(&self) -> Option<&File> {
         match self {
@@ -64,43 +39,9 @@ impl DiskMapEntry {
             DiskMapEntry::Empty(_) => None,
         }
     }
-    
-    fn as_file_mut(&mut self) -> Option<&mut File> {
-        match self {
-            DiskMapEntry::File(f) => Some(f),
-            DiskMapEntry::Empty(_) => None,
-        }
-    }
-    
-    fn is_empty(&self) -> Option<DiskMapEntry> {
-        match self {
-            DiskMapEntry::Empty(_) => Some(self.clone()),
-             DiskMapEntry::File(_) => None,
-        }
-    }
 }
 
 type DiskMap = Vec<DiskMapEntry>;
-trait DiskMapCounter {
-    fn count_files_and_empty(&self) -> (usize, usize);
-}
-
-impl DiskMapCounter for DiskMap {
-    fn count_files_and_empty(&self) -> (usize, usize) {
-        let mut file_count = 0;
-        let mut empty_count = 0;
-
-        for entry in self.iter() {
-            match entry {
-                DiskMapEntry::File(f) => file_count += f.size,
-                DiskMapEntry::Empty(size) => empty_count += size,
-            }
-        }
-
-        (file_count, empty_count)
-    }
-}
-
 trait DiskMapFlatten {
     fn flatten(&self) -> DiskMap;    
 }
@@ -121,64 +62,63 @@ impl DiskMapFlatten for DiskMap {
 }
 
 trait DiskMapCompressable {
-    fn compress(&mut self) -> DiskMap;
+    fn files(&self) -> impl DoubleEndedIterator<Item = File>;
+    fn get_checksum(&self) -> usize;
+    fn as_string(&self) -> String;
+    fn compress(&mut self);
 }
 
 impl DiskMapCompressable for DiskMap {
-    fn compress(&mut self) -> DiskMap {
-        
-        let (total_file_size, total_empty_space): (usize, usize) = self.count_files_and_empty();
+    fn files(&self) -> impl DoubleEndedIterator<Item = File> {
+        self.iter()
+            .filter_map(|entry| entry.as_file_ref().cloned())
+    }
 
-        let self_clone = self.clone();
-        let file_rev = self.iter_mut()
-            .rev().filter_map(|entry| entry.as_file_mut())
-            .peekable();
-        
-        let mut remaining_file_space = total_file_size;
-        let mut result: DiskMap = self_clone.iter().scan(file_rev, |state, entry| {
-            let mut fill_files: DiskMap = Vec::new();
-
+    fn as_string(&self) -> String {
+        self.iter().map(|entry| {
             match entry {
-                DiskMapEntry::Empty(mut empty_space) => {
-                    while empty_space > 0 {
-                        match state.peek_mut() {
-                            Some(file) if (file.size + empty_space) > remaining_file_space => {
-                                fill_files.push(DiskMapEntry::File(file.clone()));
-                                state.next();
-                                empty_space = 0;
-                             }
-                            Some(file) if file.size <= empty_space => {
-                                    empty_space -= file.size;
-                                fill_files.push(DiskMapEntry::File(file.clone()));
-                                state.next();
-                            },
-                            Some(file) if file.size > empty_space => {
-                                let new_file = file.reduce_size(empty_space);
-                                fill_files.push(DiskMapEntry::File(new_file));
-                                empty_space = 0;
-                            }
-                            _ => {
-                                state.next();
-                                empty_space = 0;
-                            }
-                        };
-                    }
-                    
-                },
-                _ => {
-                    match state.next_back() {
-                        None => return None,
-                        Some(_) => fill_files.push(entry.clone()),
-                    }; 
+                DiskMapEntry::File(f) => f.id.to_string().repeat(f.size),
+                DiskMapEntry::Empty(size) => ".".to_string().repeat(*size),
+            }
+        }).collect()
+    }
+    fn get_checksum(&self) -> usize {
+        self.flatten().iter().enumerate().map(|(i, entry)| {
+            match entry {
+                DiskMapEntry::File(f) => i * f.id,
+                DiskMapEntry::Empty(_) => 0,
+            }
+        }).sum()
+    }
+
+    fn compress(&mut self) {
+        'move_file: for maybe_move in self.clone().iter().rev() {
+            let move_file = match maybe_move {
+                DiskMapEntry::Empty(_) => continue,
+                DiskMapEntry::File(f) => f
+            };
+
+            let from_i = self.iter().position(|dmp| dmp == maybe_move).unwrap();
+            'find_space: for (to_i, maybe_space) in self.clone().iter().enumerate() {
+                if to_i >= from_i {
+                    continue 'move_file;
+                }
+                match maybe_space {
+                    DiskMapEntry::Empty(empty_space) if *empty_space >= move_file.size => {
+                        self[to_i] = DiskMapEntry::File(move_file.clone());
+                        self[from_i] = DiskMapEntry::new_empty(move_file.size);
+                        
+                        let remaining_space = empty_space - move_file.size;
+                        if remaining_space > 0 {
+                            self.insert(to_i + 1, DiskMapEntry::new_empty(remaining_space));
+                        }
+                        continue 'move_file;
+                    },
+                    _ => continue 'find_space,
                 }
             }
-            remaining_file_space -= fill_files.iter().map(|f| f.size()).sum::<usize>();
-            Some(fill_files)
-        }).flatten().collect();
-        
-        result.push(DiskMapEntry::new_empty(total_empty_space));
-        
-        result
+
+        }
     }
 }
 
@@ -244,34 +184,19 @@ mod tests {
     }
 
     #[test]
-    fn test_count_files_and_empty() {
-        let disk_map = get_expected_disk_map();
-        let (file_count, empty_count) = disk_map.count_files_and_empty();
+    fn test_compress() {   
+        let mut diskmap = get_expected_disk_map();
+        diskmap.compress();
 
-        assert_eq!(file_count, 28);
-        assert_eq!(empty_count, 14);
+        assert_eq!(diskmap.get_checksum(), 2858);
     }
 
     #[test]
-    fn test_compress() {   
-        let compressed = get_expected_disk_map().compress();
+    fn test_compress_string() {   
+        let mut diskmap = get_expected_disk_map();
+        diskmap.compress();
 
-        assert_eq!(compressed, vec![
-            DiskMapEntry::new_file(0, 2),
-            DiskMapEntry::new_file(9, 2),
-            DiskMapEntry::new_file(8, 1),
-            DiskMapEntry::new_file(1, 3),
-            DiskMapEntry::new_file(8, 3),
-            DiskMapEntry::new_file(2, 1),
-            DiskMapEntry::new_file(7, 3),
-            DiskMapEntry::new_file(3, 3),
-            DiskMapEntry::new_file(6, 1),
-            DiskMapEntry::new_file(4, 2),
-            DiskMapEntry::new_file(6, 1),
-            DiskMapEntry::new_file(5, 4),
-            DiskMapEntry::new_file(6, 2),
-            DiskMapEntry::new_empty(14),
-        ]);
+        assert_eq!(diskmap.as_string(), "00992111777.44.333....5555.6666.....8888..");
     }
 
     #[test]
@@ -280,6 +205,7 @@ mod tests {
         assert_eq!(result, get_expected_disk_map());   
     }
 
+    // TODO: Move in Rust specific test documentation
     #[test]
     fn test_cycle(){
         let mut true_and_false = vec![true, false].into_iter().cycle();
@@ -317,41 +243,5 @@ mod tests {
         }).collect();
 
         assert_eq!(actual, vec![1,1,9,1,2,2,4,3,3,3,3]);
-    }
-
-    #[test]
-    fn test_split_file() {
-        let mut old_file = File { id: 0, size: 5 };
-        let new_file:File  = old_file.reduce_size(3);
-        assert_eq!(old_file.size, 2);
-        assert_eq!(new_file.size, 3);
-    }
-
-    
-    #[test]
-    fn test_split_in_iterator() {
-        let mut diskmap: DiskMap = DiskMap::from(vec![
-            DiskMapEntry::new_file( 0, 5 )
-        ]);
-
-        let mut diskmap_iter = diskmap.iter_mut().peekable();
-        
-        let old_file = diskmap_iter.peek_mut();
-        let old_file = old_file.unwrap().as_file_mut().unwrap();
-        _  = old_file.reduce_size(3);
-        
-        assert_eq!(diskmap[0].size(), 2);
-    }
-
-    #[test]
-    fn test_dmp_as_file_mut() {
-        let mut diskmap: DiskMap = DiskMap::from(vec![
-            DiskMapEntry::new_file( 0, 5 )
-        ]);
-
-        let mut file = diskmap[0].as_file_mut().unwrap();
-        file.size = 3;
-
-        assert_eq!(diskmap[0].size(), 3);
     }
 }
