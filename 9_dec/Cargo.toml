@@ -1,0 +1,9 @@
+[package]
+name = "aoc_9"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+[dependencies.load_input]
+path = '../load_input'
