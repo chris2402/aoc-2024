@@ -16,7 +16,7 @@ fn assignment(input: String) -> usize {
     let trail_heads = map.get_trail_heads();
     
     trail_heads.into_iter().map(|trail_head| {
-        map.find_tops_from(trail_head).len()
+        map.find_trails_from(trail_head).len()
     }).sum()
 }
 
@@ -44,6 +44,6 @@ mod tests {
 
     #[test]
     fn test_assignment() {
-        assert_eq!(assignment(INPUT.to_string()), 36);
+        assert_eq!(assignment(INPUT.to_string()), 81);
     }
 }
